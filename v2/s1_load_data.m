@@ -2,7 +2,7 @@ clc;
 clear;
 
 % Specify the folder containing the datasets
-folder_path = 'D:\machine learning project SELF\matlab ml\Project\CW-Data'; % Replace with your folder's path
+folder_path = 'D:\machine learning project SELF\matlab ml\Project\v2\CW-Data'; % Replace with your folder's path
 
 % Get a list of all .mat files in the folder
 files = dir(fullfile(folder_path, '*.mat'));

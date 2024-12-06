@@ -2,11 +2,14 @@ clc;
 clear;
 
 % Load dataset
-load('preprocessed_data/mergedData_Acc_TimeD_FreqD_MDay.mat');
+load('preprocessed_data/mergedData_Acc_TimeD_FreqD_MDay.mat'); % Replace with your dataset file
 
 % Separate features and labels
-X = mergedData(:, 1:end-1); % All columns except the last one are features
-Y = mergedData(:, end);     % The last column is the label
+X = mergedData{:, 1:end-1}; % All columns except the last one are features
+userIDs = mergedData.UserID; % The last column is the user ID
+
+% Convert user IDs to categorical labels
+Y = categorical(userIDs); % Use user IDs as categorical labels
 
 % Normalize the features for better training performance
 X = normalize(X);
@@ -16,18 +19,18 @@ if size(X, 1) ~= length(Y)
     error('The number of samples in X and Y do not match.');
 end
 
-% Check for NaN values in the entire dataset 
+% Check for NaN values in the entire dataset
 nanMask = isnan(X); % Identify columns with NaN values 
 nanColumns = any(nanMask, 1);
 fprintf('Columns with NaN values: %s\n', mat2str(find(nanColumns)));
 
 % Columns to remove 
-columnsToRemove = [ 111, 121, 122]; 
+columnsToRemove = [111, 121, 122]; 
 % Remove specified columns from X 
 X(:, columnsToRemove) = [];
 
-if any(isnan(X), 'all') || any(isinf(X), 'all') 
-    error('Data contains NaN or infinite values. Clean the data before PCA.'); 
+if any(isnan(X), 'all') || any(isinf(X), 'all')
+    error('Data contains NaN or infinite values. Clean the data before PCA.');
 end
 
 % Perform PCA on the features 
@@ -51,13 +54,17 @@ fprintf('Reduced number of features: %d\n', size(X_reduced, 2));
 X = X_reduced'; 
 Y = Y';
 
+% Convert labels to one-hot encoding for multi-class classification
+numClasses = length(categories(Y));
+Y_onehot = full(ind2vec(double(Y), numClasses)); % Convert categorical to numeric for one-hot encoding
+
 % Define the Feedforward Neural Network
 hiddenLayerSizes = [30, 30]; % Increased number of neurons 
 net = feedforwardnet(hiddenLayerSizes, 'trainbr'); % Use Bayesian Regularization training 
 
 % Configure training parameters
 net.trainParam.epochs = 1000; % Increased epochs for better convergence
-net.trainParam.goal = 1e-6;   % Performance goal (MSE)
+net.trainParam.goal = 1e-6;   % Performance goal
 net.trainParam.lr = 0.01;     % Learning rate
 net.trainParam.show = 25;     % Show training updates every 25 iterations
 net.trainParam.max_fail = 10; % Maximum validation failures
@@ -75,80 +82,55 @@ net.divideParam.valRatio = 0.1;   % Use 10% for validation
 net.divideParam.testRatio = 0.1;  % Use 10% for testing
 
 % Train the network
-[net, tr] = train(net, X, Y);
+[net, tr] = train(net, X, Y_onehot);
 
 % Debug: Check stopping reason
 fprintf('Training stopped due to: %s\n', tr.stop);
 
 % Evaluate network performance
 % Training, validation, and test errors
-trainPerformance = perform(net, Y(tr.trainInd), net(X(:, tr.trainInd)));
-valPerformance = perform(net, Y(tr.valInd), net(X(:, tr.valInd)));
-testPerformance = perform(net, Y(tr.testInd), net(X(:, tr.testInd)));
+trainPerformance = perform(net, Y_onehot(:, tr.trainInd), net(X(:, tr.trainInd)));
+valPerformance = perform(net, Y_onehot(:, tr.valInd), net(X(:, tr.valInd)));
+testPerformance = perform(net, Y_onehot(:, tr.testInd), net(X(:, tr.testInd)));
 
-% Classification accuracy (for classification problems)
-trainPredictions = round(net(X(:, tr.trainInd)));
-trainAccuracy = sum(trainPredictions == Y(tr.trainInd)) / length(tr.trainInd) * 100;
+% Convert one-hot predictions back to class labels
+trainPredictions = vec2ind(net(X(:, tr.trainInd)));
+valPredictions = vec2ind(net(X(:, tr.valInd)));
+testPredictions = vec2ind(net(X(:, tr.testInd)));
 
-valPredictions = round(net(X(:, tr.valInd)));
-valAccuracy = sum(valPredictions == Y(tr.valInd)) / length(tr.valInd) * 100;
+% Convert numeric predictions back to categorical
+trainPredLabels = categories(Y);
+valPredLabels = categories(Y);
+testPredLabels = categories(Y);
 
-testPredictions = round(net(X(:, tr.testInd)));
-testAccuracy = sum(testPredictions == Y(tr.testInd)) / length(tr.testInd) * 100;
-
-% Regression metrics (for regression problems)
-rmse = sqrt(mean((Y - net(X)).^2)); % Root Mean Squared Error
-r_squared = 1 - sum((Y - net(X)).^2) / sum((Y - mean(Y)).^2); % R^2 metric
+% Calculate classification accuracy
+trainAccuracy = sum(trainPredLabels(trainPredictions)' == Y(tr.trainInd)) / length(tr.trainInd) * 100;
+valAccuracy = sum(valPredLabels(valPredictions)' == Y(tr.valInd)) / length(tr.valInd) * 100;
+testAccuracy = sum(testPredLabels(testPredictions)' == Y(tr.testInd)) / length(tr.testInd) * 100;
 
 % Display performance results
-fprintf('Training Performance (MSE): %.6f\n', trainPerformance);
-fprintf('Validation Performance (MSE): %.6f\n', valPerformance);
-fprintf('Testing Performance (MSE): %.6f\n', testPerformance);
+fprintf('Training Performance (Cross-Entropy Loss): %.6f\n', trainPerformance);
+fprintf('Validation Performance (Cross-Entropy Loss): %.6f\n', valPerformance);
+fprintf('Testing Performance (Cross-Entropy Loss): %.6f\n', testPerformance);
+
 fprintf('Training Accuracy: %.2f%%\n', trainAccuracy);
 fprintf('Validation Accuracy: %.2f%%\n', valAccuracy);
 fprintf('Testing Accuracy: %.2f%%\n', testAccuracy);
-fprintf('Root Mean Squared Error (RMSE): %.2f\n', rmse);
-fprintf('R^2 (Coefficient of Determination): %.2f\n', r_squared);
 
-% 1. Plot Training Performance
+% 1. Performance plot
 figure;
 plotperform(tr);
 title('Performance');
 grid on;
 
-% 2. Regression Plots
+% 2. Confusion matrix for test set only
 figure;
-plotregression(Y(tr.trainInd), net(X(:, tr.trainInd)), 'Training');
-title('Regression: Training');
-grid on;
-
-figure;
-plotregression(Y(tr.valInd), net(X(:, tr.valInd)), 'Validation');
-title('Regression: Validation');
-grid on;
-
-figure;
-plotregression(Y(tr.testInd), net(X(:, tr.testInd)), 'Testing');
-title('Regression: Testing');
-grid on;
-
-% 3. Confusion Matrix (for classification problems)
-figure;
-predictedLabels = round(net(X)); % Use `round` for binary classification
-confusionchart(Y, predictedLabels, ...
-    'Title', 'Confusion Matrix', ...
+confusionchart(Y(tr.testInd), categorical(testPredLabels(testPredictions)), ...
+    'Title', 'Confusion Matrix (Test Set)', ...
     'RowSummary', 'row-normalized', ...
     'ColumnSummary', 'column-normalized');
 grid on;
 
-% 4. Actual vs. Predicted Values Plot (for regression problems)
-figure;
-plot(Y, net(X), 'o');
-xlabel('Actual Values');
-ylabel('Predicted Values');
-title('Actual vs Predicted Values');
-grid on;
-
 % Save the trained model and results
-save('models/trained_feedforwardnet_for_TimeD_FDay.mat', 'net', 'tr', ...
+save('models/trained_feedforwardnet_for_TimeD_FreqD_MDay.mat', 'net', 'tr', ...
     'trainPerformance', 'valPerformance', 'testPerformance');

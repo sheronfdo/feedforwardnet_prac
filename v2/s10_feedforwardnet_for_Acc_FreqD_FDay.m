@@ -1,23 +1,26 @@
-clc;
-clear;
+clc; 
+clear; 
 
-% Load dataset
-load('preprocessed_data/mergedData_Acc_FreqD_FDay.mat');
+% Load dataset 
+load('preprocessed_data/mergedData_Acc_FreqD_FDay.mat'); 
 
-% Separate features and labels
-X = mergedData(:, 1:end-1); % All columns except the last one are features
-Y = mergedData(:, end);    % Transpose Y to make it a row vector
+% Separate features and labels 
+X = mergedData{:, 1:end-1}; % All columns except the last one are features 
+userIDs = mergedData.UserID; % The last column is the user ID 
+
+% Convert user IDs to numeric labels 
+Y = grp2idx(userIDs); % Convert user IDs to numeric labels 
 
 % Normalize the features for better training performance
-X = normalize(X);
+X = normalize(X); 
 
-% Ensure that X and Y have the same number of samples
-if size(X, 1) ~= length(Y)
-    error('The number of samples in X and Y do not match.');
-end
+% Ensure that X and Y have the same number of samples 
+if size(X, 1) ~= length(Y) 
+    error('The number of samples in X and Y do not match.'); 
+end 
 
-% Transpose X to match the expected input format for the neural network
-X = X';
+% Convert X to an array and transpose it to match the expected input format for the neural network
+X = X'; 
 Y = Y';
 
 % Define the Feedforward Neural Network

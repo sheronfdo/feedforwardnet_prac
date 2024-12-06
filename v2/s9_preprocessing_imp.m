@@ -1,6 +1,3 @@
-% Load dataset
-load('preprocessed_data/merge_TimeD_FreqD_Fday_and_Mday.mat');
-
 % Define user IDs and feature domains
 user_ids = {'U01', 'U02', 'U03', 'U04', 'U05', 'U06', 'U07', 'U08', 'U09', 'U10'}; % Add more user IDs as needed
 feature_domains = {'Acc_FreqD_FDay', 'Acc_TimeD_FDay', 'Acc_TimeD_FreqD_FDay', 'Acc_FreqD_MDay', 'Acc_TimeD_MDay', 'Acc_TimeD_FreqD_MDay'};
