@@ -8,8 +8,8 @@ load('preprocessed_data/merge_TimeD_FreqD_Fday_and_Mday.mat');
 X = mergedData{:, 1:end-1}; % All columns except the last one are features
 userIDs = mergedData.UserID; % The last column is the user ID
 
-% Convert user IDs to categorical labels
-Y = categorical(userIDs); % Use user IDs as categorical labels
+% Convert user IDs to categorical labels for multi-class classification
+Y = categorical(userIDs); 
 
 % Normalize the features for better training performance
 X = normalize(X);
@@ -59,8 +59,12 @@ numClasses = length(categories(Y));
 Y_onehot = full(ind2vec(double(Y), numClasses)); % Convert categorical to numeric for one-hot encoding
 
 % Define the Feedforward Neural Network
-hiddenLayerSizes = [30, 30]; % Increased number of neurons 
+hiddenLayerSizes = [30, 30]; % Example: 2 hidden layers with 30 neurons each
 net = feedforwardnet(hiddenLayerSizes, 'trainbr'); % Use Bayesian Regularization training
+
+% Configure the network for multi-class classification
+net.layers{end}.transferFcn = 'softmax'; % Use softmax for multi-class classification
+net.performFcn = 'crossentropy';         % Use cross-entropy loss for classification
 
 % Configure training parameters
 net.trainParam.epochs = 1000; % Increased epochs for better convergence
@@ -136,12 +140,76 @@ grid on;
 
 % 2. Confusion matrix for test set only
 figure;
-confusionchart(Y(tr.testInd), categorical(testPredLabels(testPredictions)), ...
+confusionchart(categorical(Y(tr.testInd)), categorical(testPredLabels(testPredictions)), ...
     'Title', 'Confusion Matrix (Test Set)', ...
     'RowSummary', 'row-normalized', ...
     'ColumnSummary', 'column-normalized');
 grid on;
 
+% Precision, Recall, and F1-score
+testTargets = vec2ind(Y_onehot(:, tr.testInd)); % Get actual class indices for the test set
+[precision, recall, f1Score] = precisionRecallF1(testTargets, testPredictions, numClasses);
+fprintf('Class-wise Precision: %s\n', mat2str(precision));
+fprintf('Class-wise Recall: %s\n', mat2str(recall));
+fprintf('Class-wise F1-Score: %s\n', mat2str(f1Score));
+
+% Extract predicted probabilities from the network's output
+predictedScores = net(X(:, tr.testInd)); % This gives probabilities for each class
+
+% Convert categorical labels to numeric
+numericLabels = double(Y(tr.testInd)); % Convert test labels to numeric for comparison
+
+% Calculate ROC curve and AUC for each class
+figure;
+hold on;
+legendEntries = cell(numClasses, 1);
+for c = 1:numClasses
+    % Create binary labels for the current class
+    trueBinaryLabels = (numericLabels == c); % Binary vector: 1 for current class, 0 otherwise
+    
+    % Use the predicted scores for the current class
+    [rocX, rocY, ~, auc] = perfcurve(trueBinaryLabels, predictedScores(c, :), 1);
+    
+    % Plot ROC curve
+    plot(rocX, rocY, 'DisplayName', sprintf('Class %d (AUC = %.2f)', c, auc));
+    legendEntries{c} = sprintf('Class %d (AUC = %.2f)', c, auc);
+end
+
+% Finalize the ROC plot
+xlabel('False Positive Rate');
+ylabel('True Positive Rate');
+title('ROC Curve (One-vs-All)');
+legend show;
+grid on;
+hold off;
+
+
 % Save the trained model and results
 save('models/merged_TimeD_FreqD_Fday_and_Mday_model.mat', 'net', 'tr', ...
     'trainPerformance', 'valPerformance', 'testPerformance');
+
+% Precision, Recall, and F1-Score function
+function [precision, recall, f1Score] = precisionRecallF1(trueLabels, predictedLabels, numClasses)
+    % Initialize metrics
+    precision = zeros(1, numClasses);
+    recall = zeros(1, numClasses);
+    f1Score = zeros(1, numClasses);
+
+    % Compute metrics for each class
+    for c = 1:numClasses
+        truePositives = sum((predictedLabels == c) & (trueLabels == c));
+        falsePositives = sum((predictedLabels == c) & (trueLabels ~= c));
+        falseNegatives = sum((predictedLabels ~= c) & (trueLabels == c));
+
+        % Calculate precision, recall, and F1-score for class c
+        if truePositives + falsePositives > 0
+            precision(c) = truePositives / (truePositives + falsePositives);
+        end
+        if truePositives + falseNegatives > 0
+            recall(c) = truePositives / (truePositives + falseNegatives);
+        end
+        if precision(c) + recall(c) > 0
+            f1Score(c) = 2 * (precision(c) * recall(c)) / (precision(c) + recall(c));
+        end
+    end
+end

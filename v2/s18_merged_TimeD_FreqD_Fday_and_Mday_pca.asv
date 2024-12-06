@@ -4,6 +4,9 @@ clear;
 % Load dataset
 load('preprocessed_data/merge_TimeD_FreqD_Fday_and_Mday.mat');
 
+for col = 1:width(mergedData)-1 featureName = mergedData.Properties.VariableNames{col}; colData = mergedData.(featureName); outlierMask = outliers.(featureName); colData(outlierMask) = median(colData(~outlierMask)); mergedData.(featureName) = colData; % Update with cleaned column 
+% end
+
 % Separate features and labels
 X = mergedData{:, 1:end-1}; % All columns except the last one are features
 userIDs = mergedData.UserID; % The last column is the user ID

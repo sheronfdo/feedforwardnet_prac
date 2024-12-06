@@ -1,164 +1,168 @@
 clc;
 clear;
 
-%% Load dataset
+% Load dataset
 load('preprocessed_data/merge_TimeD_FreqD_Fday_and_Mday.mat');
 
-% Transpose data for convenience (samples as rows)
-data = mergedData';
+% Separate features and labels
+X = mergedData{:, 1:end-1}; % All columns except the last one are features
+userIDs = mergedData.UserID; % The last column is the user ID
 
-%% Detect and Replace Outliers
-zScores = zscore(data);
-outliers = abs(zScores) > 3; % Define outliers as points with |Z| > 3
+% Convert user IDs to categorical labels for multi-class classification
+Y = categorical(userIDs); 
 
-% Replace outliers with the median of their respective feature
-for col = 1:size(data, 2)
-    colData = data(:, col);
-    colData(outliers(:, col)) = median(colData(~outliers(:, col)));
-    data(:, col) = colData;
-end
-
-% Transpose back
-mergedData = data';
-
-%% Separate Features and Labels
-X = mergedData(:, 1:end-1); % Features
-Y = mergedData(:, end);     % Labels
-
-% Normalize features
+% Normalize the features for better training performance
 X = normalize(X);
 
-%% Handle Missing Values
-nanMask = isnan(X); % Check for NaNs
+% Ensure that X and Y have the same number of samples
+if size(X, 1) ~= length(Y)
+    error('The number of samples in X and Y do not match.');
+end
+
+% Check for NaN values in the entire dataset 
+nanMask = isnan(X); % Identify columns with NaN values 
 nanColumns = any(nanMask, 1);
 fprintf('Columns with NaN values: %s\n', mat2str(find(nanColumns)));
 
-% Remove problematic columns (hardcoded or dynamically)
-columnsToRemove = [111, 121]; % Replace with dynamic criteria if possible
+% Columns to remove 
+columnsToRemove = [111, 121]; 
+% Remove specified columns from X 
 X(:, columnsToRemove) = [];
 
-% Ensure no NaN or Inf values remain
-if any(isnan(X), 'all') || any(isinf(X), 'all')
-    error('Data contains NaN or infinite values. Clean the data before proceeding.');
+if any(isnan(X), 'all') || any(isinf(X), 'all') 
+    error('Data contains NaN or infinite values. Clean the data before PCA.'); 
 end
 
-%% Dimensionality Reduction (PCA)
+% Perform PCA on the features 
 [coeff, score, latent, tsquared, explained] = pca(X);
 
 % Display explained variance
-disp('Explained Variance by Each Component:');
+disp('Explained Variance by Each Component:'); 
 disp(explained);
 
-% Select components to retain 90% variance
-explainedVariance = cumsum(explained);
-numComponents = find(explainedVariance >= 90, 1);
+% Select the number of components to keep (e.g., 95% variance) 
+explainedVariance = cumsum(explained); 
+numComponents = find(explainedVariance >= 95, 1);
 
-% Reduce dimensionality
+% Reduce the feature set to the selected components 
 X_reduced = score(:, 1:numComponents);
+
 fprintf('Original number of features: %d\n', size(X, 2));
 fprintf('Reduced number of features: %d\n', size(X_reduced, 2));
 
-% Transpose X and Y to match neural network input format
-X = X_reduced';
+% Transpose X and Y to match the expected input format for the neural network
+X = X_reduced'; 
 Y = Y';
 
-%% Define Feedforward Neural Network
-hiddenLayerSizes = [30, 30]; % Two hidden layers with 30 neurons each
-net = feedforwardnet(hiddenLayerSizes);
+% Convert labels to one-hot encoding for multi-class classification
+numClasses = length(categories(Y));
+Y_onehot = full(ind2vec(double(Y), numClasses)); % Convert categorical to numeric for one-hot encoding
 
-% Configure for classification
-net.layers{end}.transferFcn = 'softmax'; % Use softmax for multi-class problems
-net.performFcn = 'crossentropy';        % Cross-entropy loss function
+% Define the Feedforward Neural Network
+hiddenLayerSizes = [30, 30]; % Example: 2 hidden layers with 30 neurons each
+net = feedforwardnet(hiddenLayerSizes, 'trainbr'); % Use Bayesian Regularization training
 
-% Training Parameters
-net.trainParam.epochs = 1000;  % Number of epochs
-net.trainParam.goal = 1e-6;    % Performance goal
-net.trainParam.lr = 0.01;      % Learning rate
-net.trainParam.show = 25;      % Show progress every 25 iterations
-net.trainParam.max_fail = 10;  % Early stopping (max validation failures)
+% Configure the network for multi-class classification
+net.layers{end}.transferFcn = 'softmax'; % Use softmax for multi-class classification
+net.performFcn = 'crossentropy';         % Use cross-entropy loss for classification
 
-% Randomize initial weights
-net.IW{1,1} = randn(size(net.IW{1,1})) * 0.01;
-net.LW{2,1} = randn(size(net.LW{2,1})) * 0.01;
-net.b{1} = randn(size(net.b{1})) * 0.01;
-net.b{2} = randn(size(net.b{2})) * 0.01;
+% Configure training parameters
+net.trainParam.epochs = 1000; % Increased epochs for better convergence
+net.trainParam.goal = 1e-6;   % Performance goal (MSE)
+net.trainParam.lr = 0.01;     % Learning rate
+net.trainParam.show = 25;     % Show training updates every 25 iterations
+net.trainParam.max_fail = 10; % Maximum validation failures
+
+% Initialize network weights to small random values 
+net = init(net);
+net.IW{1,1} = randn(size(net.IW{1,1}))*0.01;
+net.LW{2,1} = randn(size(net.LW{2,1}))*0.01;
+net.b{1} = randn(size(net.b{1}))*0.01;
+net.b{2} = randn(size(net.b{2}))*0.01;
 
 % Split data into training, validation, and testing sets
-net.divideParam.trainRatio = 0.8; % 80% for training
-net.divideParam.valRatio = 0.1;   % 10% for validation
-net.divideParam.testRatio = 0.1;  % 10% for testing
+net.divideParam.trainRatio = 0.8; % Use 80% for training
+net.divideParam.valRatio = 0.1;   % Use 10% for validation
+net.divideParam.testRatio = 0.1;  % Use 10% for testing
 
-%% Train the Network
-[net, tr] = train(net, X, Y);
+% Train the network
+[net, tr] = train(net, X, Y_onehot);
 
-% Debugging
+% Debug: Check stopping reason
 fprintf('Training stopped due to: %s\n', tr.stop);
 
+% Print maximum indices for debugging
+fprintf('Maximum train index: %d\n', max(tr.trainInd));
+fprintf('Maximum validation index: %d\n', max(tr.valInd));
+fprintf('Maximum test index: %d\n', max(tr.testInd));
+
 % Ensure indices are within bounds
-numSamples = size(X, 2);
+numSamples = size(X, 2); % Number of samples
 if max(tr.trainInd) > numSamples || max(tr.valInd) > numSamples || max(tr.testInd) > numSamples
-    error('Index out of bounds. Check training, validation, and testing indices.');
+    error('Index out of bounds. Check the sizes of training, validation, and test indices.');
 end
 
-%% Evaluate Network Performance
-% Performance metrics
-trainPerformance = perform(net, Y(tr.trainInd), net(X(:, tr.trainInd)));
-valPerformance = perform(net, Y(tr.valInd), net(X(:, tr.valInd)));
-testPerformance = perform(net, Y(tr.testInd), net(X(:, tr.testInd)));
+% Evaluate network performance
+% Training, validation, and test errors
+trainPerformance = perform(net, Y_onehot(:, tr.trainInd), net(X(:, tr.trainInd)));
+valPerformance = perform(net, Y_onehot(:, tr.valInd), net(X(:, tr.valInd)));
+testPerformance = perform(net, Y_onehot(:, tr.testInd), net(X(:, tr.testInd)));
 
-% Classification accuracy
-trainPredictions = round(net(X(:, tr.trainInd)));
-trainAccuracy = sum(trainPredictions == Y(tr.trainInd)) / length(tr.trainInd) * 100;
+% Convert one-hot predictions back to class labels
+trainPredictions = vec2ind(net(X(:, tr.trainInd)));
+valPredictions = vec2ind(net(X(:, tr.valInd)));
+testPredictions = vec2ind(net(X(:, tr.testInd)));
 
-valPredictions = round(net(X(:, tr.valInd)));
-valAccuracy = sum(valPredictions == Y(tr.valInd)) / length(tr.valInd) * 100;
+% Convert numeric predictions back to categorical
+trainPredLabels = categories(Y);
+valPredLabels = categories(Y);
+testPredLabels = categories(Y);
 
-testPredictions = round(net(X(:, tr.testInd)));
-testAccuracy = sum(testPredictions == Y(tr.testInd)) / length(tr.testInd) * 100;
+% Calculate classification accuracy
+trainAccuracy = sum(trainPredLabels(trainPredictions)' == Y(tr.trainInd)) / length(tr.trainInd) * 100;
+valAccuracy = sum(valPredLabels(valPredictions)' == Y(tr.valInd)) / length(tr.valInd) * 100;
+testAccuracy = sum(testPredLabels(testPredictions)' == Y(tr.testInd)) / length(tr.testInd) * 100;
 
-% ROC and AUC for the test set
-[~, ~, ~, AUC] = perfcurve(Y(tr.testInd)', net(X(:, tr.testInd)), 1);
+% Display performance results
+fprintf('Training Performance (Cross-Entropy Loss): %.6f\n', trainPerformance);
+fprintf('Validation Performance (Cross-Entropy Loss): %.6f\n', valPerformance);
+fprintf('Testing Performance (Cross-Entropy Loss): %.6f\n', testPerformance);
 
-% Display results
-fprintf('Training Performance (MSE): %.6f\n', trainPerformance);
-fprintf('Validation Performance (MSE): %.6f\n', valPerformance);
-fprintf('Testing Performance (MSE): %.6f\n', testPerformance);
 fprintf('Training Accuracy: %.2f%%\n', trainAccuracy);
 fprintf('Validation Accuracy: %.2f%%\n', valAccuracy);
 fprintf('Testing Accuracy: %.2f%%\n', testAccuracy);
-fprintf('AUC (Test Set): %.2f\n', AUC);
 
-%% Visualization
-% 1. Training Performance
+% 1. Performance plot
 figure;
 plotperform(tr);
 title('Performance');
 grid on;
 
-% 2. Confusion Matrix
+% 2. Confusion matrix for test set only
 figure;
-predictedLabels = round(net(X));
-confusionchart(Y, predictedLabels, 'Title', 'Confusion Matrix', ...
-    'RowSummary', 'row-normalized', 'ColumnSummary', 'column-normalized');
+confusionchart(categorical(Y(tr.testInd)), categorical(testPredLabels(testPredictions)), ...
+    'Title', 'Confusion Matrix (Test Set)', ...
+    'RowSummary', 'row-normalized', ...
+    'ColumnSummary', 'column-normalized');
 grid on;
 
-% 3. Regression Plots
-figure;
-plotregression(Y(tr.trainInd), net(X(:, tr.trainInd)), 'Training');
-figure;
-plotregression(Y(tr.valInd), net(X(:, tr.valInd)), 'Validation');
-figure;
-plotregression(Y(tr.testInd), net(X(:, tr.testInd)), 'Testing');
+% Precision, Recall, and F1-score
+[precision, recall, f1Score] = precisionRecallF1(testTargets, testPredictions, numClasses);
+fprintf('Class-wise Precision: %s\n', mat2str(precision));
+fprintf('Class-wise Recall: %s\n', mat2str(recall));
+fprintf('Class-wise F1-Score: %s\n', mat2str(f1Score));
 
-% 4. ROC Curve
+% ROC Curve
+[rocX, rocY, rocT, auc] = perfcurve(double(Y(tr.testInd)), ...
+    net(X(:, tr.testInd)), 1:numClasses);
+
+% Plot ROC Curve
 figure;
-[Xroc, Yroc, Troc, AUC] = perfcurve(Y', net(X), 1);
-plot(Xroc, Yroc);
+plot(rocX, rocY);
 xlabel('False Positive Rate');
 ylabel('True Positive Rate');
 title('ROC Curve');
-grid on;
 
-% Save model
-save('models/merged_model.mat', 'net', 'tr', 'trainPerformance', ...
-     'valPerformance', 'testPerformance');
+% Save the trained model and results
+save('models/merged_TimeD_FreqD_Fday_and_Mday_model.mat', 'net', 'tr', ...
+    'trainPerformance', 'valPerformance', 'testPerformance');
