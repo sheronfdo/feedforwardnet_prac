@@ -49,6 +49,14 @@ Y = Y';
 % Define the Feedforward Neural Network
 hiddenLayerSizes = [30, 30]; % Increased number of neurons 
 net = feedforwardnet(hiddenLayerSizes, 'trainbr'); % Use Bayesian Regularization training 
+
+% Configure training parameters
+net.trainParam.epochs = 1000; % Increased epochs for better convergence
+net.trainParam.goal = 1e-6;   % Performance goal (MSE)
+net.trainParam.lr = 0.01;     % Learning rate
+net.trainParam.show = 25;     % Show training updates every 25 iterations
+net.trainParam.max_fail = 10; % Maximum validation failures
+
 % Initialize network weights to small random values 
 net = init(net);
 net.IW{1,1} = randn(size(net.IW{1,1}))*0.01;

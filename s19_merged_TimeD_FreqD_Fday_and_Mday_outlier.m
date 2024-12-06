@@ -71,6 +71,7 @@ Y = Y';
 % Define the Feedforward Neural Network
 hiddenLayerSizes = [10, 10]; % Increased number of neurons 
 net = feedforwardnet(hiddenLayerSizes, 'trainbr'); 
+
 % Configure training parameters
 net.trainParam.epochs = 1000; % Increased epochs for better convergence
 net.trainParam.goal = 1e-6;   % Performance goal (MSE)
@@ -178,5 +179,5 @@ title('Actual vs Predicted Values');
 grid on;
 
 % Save the trained model and results
-save('models/trained_feedforwardnet_for_TimeD_FDay.mat', 'net', 'tr', ...
+save('models/merged_TimeD_FreqD_Fday_and_Mday_model.mat', 'net', 'tr', ...
     'trainPerformance', 'valPerformance', 'testPerformance');
