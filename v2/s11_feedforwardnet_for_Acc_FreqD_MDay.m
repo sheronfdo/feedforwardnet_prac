@@ -105,6 +105,41 @@ confusionchart(Y(tr.testInd), categorical(testPredLabels(testPredictions)), ...
     'ColumnSummary', 'column-normalized');
 grid on;
 
+% Actual labels
+testTargets = vec2ind(Y_onehot(:, tr.testInd));
+
+% ROC Curve for each class
+figure;
+hold on;
+for c = 1:numClasses
+    trueBinaryLabels = (testTargets == c); % Binary labels for current class
+    predictedScores = net(X(:, tr.testInd)); % Get predicted probabilities
+    [rocX, rocY, ~, auc] = perfcurve(trueBinaryLabels, predictedScores(c, :), 1);
+    plot(rocX, rocY, 'DisplayName', sprintf('Class %d (AUC = %.2f)', c, auc));
+end
+xlabel('False Positive Rate');
+ylabel('True Positive Rate');
+title('ROC Curve (One-vs-All)');
+legend show;
+grid on;
+hold off;
+
+% Function to compute precision, recall, and F1-score
+function [precision, recall, f1Score] = precisionRecallF1(trueLabels, predictedLabels, numClasses)
+    precision = zeros(1, numClasses);
+    recall = zeros(1, numClasses);
+    f1Score = zeros(1, numClasses);
+
+    for c = 1:numClasses
+        tp = sum((predictedLabels == c) & (trueLabels == c));
+        fp = sum((predictedLabels == c) & (trueLabels ~= c));
+        fn = sum((predictedLabels ~= c) & (trueLabels == c));
+
+        precision(c) = tp / (tp + fp + eps); % Avoid division by zero
+        recall(c) = tp / (tp + fn + eps);
+        f1Score(c) = 2 * (precision(c) * recall(c)) / (precision(c) + recall(c) + eps);
+    end
+end
 
 % Save trained model and results
 save('models\trained_feedforwardnet_for_Data_Acc_FreqD_FDay.mat', 'net', 'tr', 'trainPerformance', 'valPerformance', 'testPerformance');
